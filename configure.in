@@ -136,12 +136,7 @@ AC_CHECK_LIB([avcodec], [av_lockmgr_register], , AC_MSG_ERROR([libav (ffmpeg) >=
 LIBS="$save_LIBS"
 
 # Check for libavformat >= 53; url -> avio switch
-_PKG_CONFIG([libavformat_VERSION], [atleast-version=53], [libavformat])
-if test $pkg_failed = yes; then
-	AM_CONDITIONAL(COND_AVIO, false)
-else
-	AM_CONDITIONAL(COND_AVIO, true)
-fi
+PKG_CHECK_EXISTS([libavformat >= 53],[AM_CONDITIONAL(COND_AVIO, true)],[AM_CONDITIONAL(COND_AVIO, false)])
 
 PKG_CHECK_MODULES(MINIXML, [ mxml ])
 
