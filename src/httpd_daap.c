@@ -57,9 +57,11 @@
 
 
 /* Session timeout in seconds */
-#define DAAP_SESSION_TIMEOUT 1800
+#define DAAP_SESSION_TIMEOUT 0 /* By default the session never times out */
+/* We announce this timeout to the client when returning server capabilities */
+#define DAAP_SESSION_TIMEOUT_CAPABILITY 1800
 /* Update requests refresh interval in seconds */
-#define DAAP_UPDATE_REFRESH  300
+#define DAAP_UPDATE_REFRESH  0
 
 
 struct uri_map {
@@ -190,12 +192,15 @@ daap_session_register(void)
       return NULL;
     }
 
-  dispatch_set_context(s->timeout, s);
-  dispatch_source_set_event_handler_f(s->timeout, daap_session_timeout_cb);
+  if (DAAP_SESSION_TIMEOUT > 0)
+  {
+    dispatch_set_context(s->timeout, s);
+    dispatch_source_set_event_handler_f(s->timeout, daap_session_timeout_cb);
 
-  dispatch_source_set_timer(s->timeout,
-			    dispatch_time(DISPATCH_TIME_NOW, DAAP_SESSION_TIMEOUT * NSEC_PER_SEC),
-			    DISPATCH_TIME_FOREVER /* one-shot */, 30 * NSEC_PER_SEC);
+    dispatch_source_set_timer(s->timeout,
+  			    dispatch_time(DISPATCH_TIME_NOW, DAAP_SESSION_TIMEOUT * NSEC_PER_SEC),
+  			    DISPATCH_TIME_FOREVER /* one-shot */, 30 * NSEC_PER_SEC);
+  }
 
   dispatch_sync(sessions_sq, ^{
       avl_node_t *node;
@@ -213,6 +218,7 @@ daap_session_register(void)
 	  return;
 	}
 
+    if (DAAP_SESSION_TIMEOUT > 0)
       dispatch_resume(s->timeout);
 
       b_ret = 0;
@@ -263,9 +269,12 @@ daap_session_find(struct httpd_hdl *h, struct daap_session **s)
 
       *s = (struct daap_session *)node->item;
 
-      dispatch_source_set_timer((*s)->timeout,
-				dispatch_time(DISPATCH_TIME_NOW, DAAP_SESSION_TIMEOUT * NSEC_PER_SEC),
-				DISPATCH_TIME_FOREVER /* one-shot */, 30 * NSEC_PER_SEC);
+      if (DAAP_SESSION_TIMEOUT > 0)
+      {
+        dispatch_source_set_timer((*s)->timeout,
+  				dispatch_time(DISPATCH_TIME_NOW, DAAP_SESSION_TIMEOUT * NSEC_PER_SEC),
+  				DISPATCH_TIME_FOREVER /* one-shot */, 30 * NSEC_PER_SEC);
+      }
     });
 
   if (!*s)
@@ -736,24 +745,24 @@ daap_reply_server_info(struct httpd_hdl *h, struct evbuffer *evbuf, char **uri)
   dmap_add_container(evbuf, "msrv", len - 8);
   dmap_add_int(evbuf, "mstt", 200);  /* 12 */
   dmap_add_int(evbuf, "mpro", mpro); /* 12 */
-  dmap_add_int(evbuf, "apro", apro); /* 12 */
   dmap_add_string(evbuf, "minm", name); /* 8 + strlen(name) */
-
-  dmap_add_int(evbuf, "mstm", DAAP_SESSION_TIMEOUT); /* 12 */
-  dmap_add_char(evbuf, "msal", 1);   /* 9 */
+  dmap_add_int(evbuf, "apro", apro); /* 12 */
 
   dmap_add_char(evbuf, "mslr", 1);   /* 9 */
+  dmap_add_int(evbuf, "mstm", DAAP_SESSION_TIMEOUT_CAPABILITY); /* 12 */
+  dmap_add_char(evbuf, "msal", 1);   /* 9 */
   dmap_add_char(evbuf, "msau", (passwd) ? 2 : 0); /* 9 */
+  /* Advertise updates support even though we don't send updates */
+  dmap_add_char(evbuf, "msup", 1);   /* 9 */
+
+  dmap_add_char(evbuf, "mspi", 1);   /* 9 */
   dmap_add_char(evbuf, "msex", 1);   /* 9 */
   dmap_add_char(evbuf, "msix", 1);   /* 9 */
   dmap_add_char(evbuf, "msbr", 1);   /* 9 */
   dmap_add_char(evbuf, "msqy", 1);   /* 9 */
 
-  dmap_add_char(evbuf, "mspi", 1);   /* 9 */
   dmap_add_int(evbuf, "msdc", 1);    /* 12 */
 
-  /* Advertise updates support even though we don't send updates */
-  dmap_add_char(evbuf, "msup", 1);   /* 9 */
 
   ret = http_response_set_status(h->r, HTTP_OK, "OK");
   if (ret < 0)
@@ -997,13 +1006,15 @@ daap_reply_update(struct httpd_hdl *h, struct evbuffer *evbuf, char **uri)
       return dmap_send_error(h, "mupd", "Could not create timer");
     }
 
-  dispatch_set_context(ur->timeout, ur);
-  dispatch_source_set_event_handler_f(ur->timeout, update_refresh_cb);
+  if (DAAP_UPDATE_REFRESH > 0)
+  {
+    dispatch_set_context(ur->timeout, ur);
+    dispatch_source_set_event_handler_f(ur->timeout, update_refresh_cb);
 
-  dispatch_source_set_timer(ur->timeout,
-			    dispatch_time(DISPATCH_TIME_NOW, DAAP_UPDATE_REFRESH * NSEC_PER_SEC),
-			    DISPATCH_TIME_FOREVER /* one-shot */, 30 * NSEC_PER_SEC);
-
+    dispatch_source_set_timer(ur->timeout,
+  			    dispatch_time(DISPATCH_TIME_NOW, DAAP_UPDATE_REFRESH * NSEC_PER_SEC),
+  			    DISPATCH_TIME_FOREVER /* one-shot */, 30 * NSEC_PER_SEC);
+  }
   /* Freeze the request */
   http_server_response_freeze(h->c, h->r, update_free_cb, ur);
 
