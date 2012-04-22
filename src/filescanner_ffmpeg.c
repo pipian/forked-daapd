@@ -156,6 +156,21 @@ const struct metadata_map md_map_vorbis[] =
     { "disctotal",    1, mfi_offsetof(total_discs),       NULL },
     { "totaldiscs",   1, mfi_offsetof(total_discs),       NULL },
 
+    /*
+     * [field]SORT is a standard used by SlimServer:
+     * http://wiki.slimdevices.com/index.php/SlimServerSupportedTags
+     *
+     * ALBUMARTISTSORT is derived from that standard:
+     * http://wiki.musicbrainz.org/Picard_Tag_Mapping
+     *
+     * COMPOSERSORT is not given, but is derived by analogy.
+     */
+    { "artistsort",   0, mfi_offsetof(artist_sort),       NULL },
+    { "albumsort",    0, mfi_offsetof(album_sort),        NULL },
+    { "albumartistsort", 0, mfi_offsetof(album_artist_sort), NULL },
+    { "titlesort",    0, mfi_offsetof(title_sort),        NULL },
+    { "composersort", 0, mfi_offsetof(composer_sort),     NULL },
+
     { NULL,           0, 0,                               NULL }
   };
 
