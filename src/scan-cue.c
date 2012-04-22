@@ -810,6 +810,9 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
 		    } else {
 			/* Final track. */
 			cuesheet_tracks[i - 1].sample_count = cue_track->offset - prev_offset;
+			if (pmp3->samplerate > 0) {
+			    cuesheet_tracks[i - 1].song_length = cuesheet_tracks[i - 1].sample_count * 1000 / pmp3->samplerate;
+			}
 		    }
 		}
 		
