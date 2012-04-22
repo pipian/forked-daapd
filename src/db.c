@@ -1607,14 +1607,14 @@ db_file_inc_playcount(int id)
 }
 
 void
-db_file_ping(int id)
+db_file_ping(char *path)
 {
-#define Q_TMPL "UPDATE files SET db_timestamp = %" PRIi64 ", disabled = 0 WHERE id = %d;"
+#define Q_TMPL "UPDATE files SET db_timestamp = %" PRIi64 ", disabled = 0 WHERE path = '%q';"
   char *query;
   char *errmsg;
   int ret;
 
-  query = sqlite3_mprintf(Q_TMPL, (int64_t)time(NULL), id);
+  query = sqlite3_mprintf(Q_TMPL, (int64_t)time(NULL), path);
   if (!query)
     {
       DPRINTF(E_LOG, L_DB, "Out of memory for query string\n");
@@ -1626,7 +1626,7 @@ db_file_ping(int id)
 
   ret = db_exec(query, &errmsg);
   if (ret != SQLITE_OK)
-    DPRINTF(E_LOG, L_DB, "Error pinging file ID %d: %s\n", id, errmsg);
+    DPRINTF(E_LOG, L_DB, "Error pinging file path %s: %s\n", path, errmsg);
 
   sqlite3_free(errmsg);
   sqlite3_free(query);
@@ -1832,9 +1832,9 @@ db_file_id_byurl(char *url)
 }
 
 void
-db_file_stamp_bypath(char *path, time_t *stamp, int *id)
+db_file_stamp_bypath(char *path, time_t *stamp)
 {
-#define Q_TMPL "SELECT f.id, f.db_timestamp FROM files f WHERE f.path = '%q';"
+#define Q_TMPL "SELECT f.db_timestamp FROM files f WHERE f.path = '%q';"
   char *query;
   sqlite3_stmt *stmt;
   int ret;
@@ -1873,8 +1873,7 @@ db_file_stamp_bypath(char *path, time_t *stamp, int *id)
       return;
     }
 
-  *id = sqlite3_column_int(stmt, 0);
-  *stamp = (time_t)sqlite3_column_int64(stmt, 1);
+  *stamp = (time_t)sqlite3_column_int64(stmt, 0);
 
 #ifdef DB_PROFILE
   while (db_blocking_step(stmt) == SQLITE_ROW)
