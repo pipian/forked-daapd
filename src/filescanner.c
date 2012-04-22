@@ -675,7 +675,12 @@ process_directory(char *path, int flags)
 static void
 process_directory_async(char *path, int flags)
 {
+  cfg_t *lib;
+  int nexcldirs;
+  char *deref;
   char *my_path;
+  char *excl_path;
+  int i;
 
   if (stop_scan)
     {
@@ -683,6 +688,33 @@ process_directory_async(char *path, int flags)
 	free(path);
 
       return;
+    }
+
+  /* Inefficient.  Should probably use a hashtable with deref'd paths. */
+  lib = cfg_getsec(cfg, "library");
+  nexcldirs = cfg_size(lib, "exclude_directories");
+  for (i = 0; i < nexcldirs; i++)
+    {
+      excl_path = cfg_getnstr(lib, "exclude_directories", i);
+
+      deref = m_realpath(excl_path);
+      if (!deref)
+	{
+	  DPRINTF(E_LOG, L_SCAN, "Not excluding library directory %s, could not dereference: %s\n", excl_path, strerror(errno));
+
+	  continue;
+	}
+
+      if (strcmp(path, deref) == 0)
+	{
+	  DPRINTF(E_LOG, L_SCAN, "Excluding library directory %s on request\n", path);
+	  free(deref);
+	  if (flags & F_SCAN_NODUP)
+	    free(path);
+
+	  return;
+	}
+      free(deref);
     }
 
   if (flags & F_SCAN_NODUP)
