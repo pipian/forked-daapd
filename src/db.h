@@ -63,6 +63,8 @@ struct pairing_info {
   char *guid;
 };
 
+struct media_file_info;
+
 struct media_file_info {
   char *path;
   uint32_t index;
@@ -109,6 +111,8 @@ struct media_file_info {
 
   uint32_t item_kind;    /* song or movie */
   uint32_t data_kind;    /* dmap.datakind (asdk) */
+  char subtrack;         /* cuesheet support */
+  uint64_t sample_offset; /* implicit cuesheet support */
   uint64_t sample_count;
   char compilation;
 
@@ -135,6 +139,8 @@ struct media_file_info {
   char *album_sort;
   char *composer_sort;
   char *album_artist_sort;
+
+  struct media_file_info *cuesheet_tracks; /* cuesheet subtracks (temporary) */
 };
 
 #define mfi_offsetof(field) offsetof(struct media_file_info, field)
@@ -231,6 +237,8 @@ struct db_media_file_info {
   char *time_played;
   char *db_timestamp;
   char *disabled;
+  char *subtrack;
+  char *sample_offset;
   char *sample_count;
   char *codectype;
   char *idx;

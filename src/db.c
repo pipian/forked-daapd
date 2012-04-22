@@ -126,6 +126,8 @@ static const struct col_type_map mfi_cols_map[] =
     { mfi_offsetof(time_played),        DB_TYPE_INT },
     { mfi_offsetof(db_timestamp),       DB_TYPE_INT },
     { mfi_offsetof(disabled),           DB_TYPE_INT },
+    { mfi_offsetof(subtrack),           DB_TYPE_CHAR },
+    { mfi_offsetof(sample_offset),      DB_TYPE_INT64 },
     { mfi_offsetof(sample_count),       DB_TYPE_INT64 },
     { mfi_offsetof(codectype),          DB_TYPE_STRING },
     { mfi_offsetof(index),              DB_TYPE_INT },
@@ -207,6 +209,8 @@ static const ssize_t dbmfi_cols_map[] =
     dbmfi_offsetof(time_played),
     dbmfi_offsetof(db_timestamp),
     dbmfi_offsetof(disabled),
+    dbmfi_offsetof(subtrack),
+    dbmfi_offsetof(sample_offset),
     dbmfi_offsetof(sample_count),
     dbmfi_offsetof(codectype),
     dbmfi_offsetof(idx),
@@ -343,6 +347,8 @@ free_pi(struct pairing_info *pi, int content_only)
 void
 free_mfi(struct media_file_info *mfi, int content_only)
 {
+  int i;
+
   if (mfi->path)
     free(mfi->path);
 
@@ -411,6 +417,13 @@ free_mfi(struct media_file_info *mfi, int content_only)
 
   if (mfi->album_artist_sort)
     free(mfi->album_artist_sort);
+
+  if (mfi->cuesheet_tracks) {
+    for (i = 0; i < mfi->total_tracks; i++) {
+      free_mfi(&(mfi->cuesheet_tracks[i]), 1);
+    }
+    free(mfi->cuesheet_tracks);
+  }
 
   if (!content_only)
     free(mfi);
@@ -2020,7 +2033,7 @@ db_file_add(struct media_file_info *mfi)
 #define Q_TMPL "INSERT INTO files (id, path, fname, title, artist, album, genre, comment, type, composer," \
                " orchestra, conductor, grouping, url, bitrate, samplerate, song_length, file_size, year, track," \
                " total_tracks, disc, total_discs, bpm, compilation, rating, play_count, data_kind, item_kind," \
-               " description, time_added, time_modified, time_played, db_timestamp, disabled, sample_count," \
+               " description, time_added, time_modified, time_played, db_timestamp, disabled, subtrack, sample_offset, sample_count," \
                " codectype, idx, has_video, contentrating, bits_per_sample, album_artist," \
                " media_kind, tv_series_name, tv_episode_num_str, tv_network_name, tv_episode_sort, tv_season_num, " \
                " songalbumid, title_sort, artist_sort, album_sort, composer_sort, album_artist_sort" \
@@ -2028,7 +2041,7 @@ db_file_add(struct media_file_info *mfi)
                " VALUES (NULL, '%q', '%q', TRIM(%Q), TRIM(%Q), TRIM(%Q), TRIM(%Q), TRIM(%Q), %Q, TRIM(%Q)," \
                " TRIM(%Q), TRIM(%Q), TRIM(%Q), %Q, %d, %d, %d, %" PRIi64 ", %d, %d," \
                " %d, %d, %d, %d, %d, %d, %d, %d, %d," \
-               " %Q, %" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %d, %" PRIi64 "," \
+               " %Q, %" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %d, %d, %" PRIi64 ", %" PRIi64 "," \
                " %Q, %d, %d, %d, %d, TRIM(%Q), %d, TRIM(%Q), TRIM(%Q), TRIM(%Q), %d, %d, daap_songalbumid(TRIM(%Q), TRIM(%Q))," \
                " TRIM(%Q), TRIM(%Q), TRIM(%Q), TRIM(%Q), TRIM(%Q));"
 
@@ -2049,6 +2062,97 @@ db_file_add(struct media_file_info *mfi)
   if (mfi->time_modified == 0)
     mfi->time_modified = mfi->db_timestamp;
 
+  /* Need to iterate through all mfi->cuesheet_tracks to construct
+     pseudo-tracks */
+  if (mfi->cuesheet_tracks != NULL)
+    {
+      struct media_file_info pseudo_mfi;
+      int i, j, tracks = 0, retval = 0;
+      char **oldStrval, **newStrval;
+      char *oldCval, *newCval;
+      uint32_t *oldIval, *newIval;
+      uint64_t *oldI64val, *newI64val;
+
+      /* First identify the number of non-data tracks. */
+      for (i = 0; i < mfi->total_tracks; i++)
+	{
+	  if (!mfi->cuesheet_tracks[i].disabled)
+	    {
+	      tracks++;
+	    }
+	}
+
+      DPRINTF(E_DBG, L_DB, "File has %d subtracks.  Preparing to add.\n", tracks);
+
+      /* Then, submit every subtrack. */
+      for (i = 0; i < mfi->total_tracks; i++)
+	{
+	  if (mfi->cuesheet_tracks[i].disabled)
+	    {
+	      continue;
+	    }
+
+	  memcpy(&pseudo_mfi, mfi, sizeof(pseudo_mfi));
+	  pseudo_mfi.cuesheet_tracks = NULL;
+
+	  for (j = 0; j < (sizeof(mfi_cols_map) / sizeof(mfi_cols_map[0])); j++)
+	    {
+	      switch (mfi_cols_map[j].type)
+		{
+		case DB_TYPE_CHAR:
+		  oldCval = (char *)&(mfi->cuesheet_tracks[i]) + mfi_cols_map[j].offset;
+		  newCval = (char *)&pseudo_mfi + mfi_cols_map[j].offset;
+
+		  if (*oldCval != 0)
+		    {
+		      *newCval = *oldCval;
+		    }
+		  break;
+
+		case DB_TYPE_INT:
+		  oldIval = (uint32_t *) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_cols_map[j].offset);
+		  newIval = (uint32_t *) ((char *)&pseudo_mfi + mfi_cols_map[j].offset);
+
+		  if (*oldIval != 0)
+		    {
+		      *newIval = *oldIval;
+		    }
+		  break;
+
+		case DB_TYPE_INT64:
+		  oldI64val = (uint64_t *) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_cols_map[j].offset);
+		  newI64val = (uint64_t *) ((char *)&pseudo_mfi + mfi_cols_map[j].offset);
+
+		  if (*oldI64val != 0)
+		    {
+		      *newI64val = *oldI64val;
+		    }
+		  break;
+
+		case DB_TYPE_STRING:
+		  oldStrval = (char **) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_cols_map[j].offset);
+		  newStrval = (char **) ((char *)&pseudo_mfi + mfi_cols_map[j].offset);
+
+		  if (*oldStrval != NULL)
+		    {
+		      *newStrval = *oldStrval;
+		    }
+		  break;
+
+		default:
+		  DPRINTF(E_LOG, L_DB, "BUG: Unknown type %d in mfi column map\n", mfi_cols_map[j].type);
+		}
+	    }
+
+	  /* And submit that track. */
+	  retval = db_file_add(&pseudo_mfi);
+	  if (retval < 0)
+	    break;
+	}
+
+      return retval;
+    }
+
   query = sqlite3_mprintf(Q_TMPL,
 			  STR(mfi->path), STR(mfi->fname), mfi->title, mfi->artist, mfi->album,
 			  mfi->genre, mfi->comment, mfi->type, mfi->composer,
@@ -2057,7 +2161,7 @@ db_file_add(struct media_file_info *mfi)
 			  mfi->total_tracks, mfi->disc, mfi->total_discs, mfi->bpm, mfi->compilation,
 			  mfi->rating, mfi->play_count, mfi->data_kind, mfi->item_kind,
 			  mfi->description, (int64_t)mfi->time_added, (int64_t)mfi->time_modified,
-			  (int64_t)mfi->time_played, (int64_t)mfi->db_timestamp, mfi->disabled, mfi->sample_count,
+			  (int64_t)mfi->time_played, (int64_t)mfi->db_timestamp, mfi->disabled, mfi->subtrack, mfi->sample_offset, mfi->sample_count,
 			  mfi->codectype, mfi->index, mfi->has_video,
 			  mfi->contentrating, mfi->bits_per_sample, mfi->album_artist,
                           mfi->media_kind, mfi->tv_series_name, mfi->tv_episode_num_str, 
@@ -2099,7 +2203,7 @@ db_file_update(struct media_file_info *mfi)
                " year = %d, track = %d, total_tracks = %d, disc = %d, total_discs = %d, bpm = %d," \
                " compilation = %d, rating = %d, data_kind = %d, item_kind = %d," \
                " description = %Q, time_modified = %" PRIi64 "," \
-               " db_timestamp = %" PRIi64 ", sample_count = %" PRIi64 "," \
+               " db_timestamp = %" PRIi64 ", subtrack = %d, sample_offset = %" PRIi64 ", sample_count = %" PRIi64 "," \
                " codectype = %Q, idx = %d, has_video = %d," \
                " bits_per_sample = %d, album_artist = TRIM(%Q)," \
                " media_kind = %d, tv_series_name = TRIM(%Q), tv_episode_num_str = TRIM(%Q)," \
@@ -2122,6 +2226,95 @@ db_file_update(struct media_file_info *mfi)
   if (mfi->time_modified == 0)
     mfi->time_modified = mfi->db_timestamp;
 
+  /* Need to iterate through all mfi->cuesheet_tracks to construct
+     pseudo-tracks. */
+  if (mfi->cuesheet_tracks != NULL)
+    {
+      struct media_file_info pseudo_mfi;
+      int i, j, tracks = 0, retval = 0;
+      char **oldStrval, **newStrval;
+      char *oldCval, *newCval;
+      uint32_t *oldIval, *newIval;
+      uint64_t *oldI64val, *newI64val;
+
+      /* First identify the number of non-data tracks. */
+      for (i = 0; i < mfi->total_tracks; i++)
+	{
+	  if (!mfi->cuesheet_tracks[i].disabled)
+	    {
+	      tracks++;
+	    }
+	}
+
+      /* Then, submit every subtrack. */
+      for (i = 0; i < mfi->total_tracks; i++)
+	{
+	  if (mfi->cuesheet_tracks[i].disabled)
+	    {
+	      continue;
+	    }
+
+	  memcpy(&pseudo_mfi, mfi, sizeof(pseudo_mfi));
+	  pseudo_mfi.cuesheet_tracks = NULL;
+
+	  for (j = 0; j < (sizeof(mfi_cols_map) / sizeof(mfi_cols_map[0])); j++)
+	    {
+	      switch (mfi_cols_map[j].type)
+		{
+		case DB_TYPE_CHAR:
+		  oldCval = (char *)&(mfi->cuesheet_tracks[i]) + mfi_cols_map[j].offset;
+		  newCval = (char *)&pseudo_mfi + mfi_cols_map[j].offset;
+
+		  if (*oldCval != 0)
+		    {
+		      *newCval = *oldCval;
+		    }
+		  break;
+
+		case DB_TYPE_INT:
+		  oldIval = (uint32_t *) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_cols_map[j].offset);
+		  newIval = (uint32_t *) ((char *)&pseudo_mfi + mfi_cols_map[j].offset);
+
+		  if (*oldIval != 0)
+		    {
+		      *newIval = *oldIval;
+		    }
+		  break;
+
+		case DB_TYPE_INT64:
+		  oldI64val = (uint64_t *) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_cols_map[j].offset);
+		  newI64val = (uint64_t *) ((char *)&pseudo_mfi + mfi_cols_map[j].offset);
+
+		  if (*oldI64val != 0)
+		    {
+		      *newI64val = *oldI64val;
+		    }
+		  break;
+
+		case DB_TYPE_STRING:
+		  oldStrval = (char **) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_cols_map[j].offset);
+		  newStrval = (char **) ((char *)&pseudo_mfi + mfi_cols_map[j].offset);
+
+		  if (*oldStrval != NULL)
+		    {
+		      *newStrval = *oldStrval;
+		    }
+		  break;
+
+		default:
+		  DPRINTF(E_LOG, L_DB, "BUG: Unknown type %d in mfi column map\n", mfi_cols_map[j].type);
+		}
+	    }
+
+	  /* And submit that track. */
+	  retval = db_file_update(&pseudo_mfi);
+	  if (retval < 0)
+	    break;
+	}
+
+      return retval;
+    }
+
   query = sqlite3_mprintf(Q_TMPL,
 			  STR(mfi->path), STR(mfi->fname), mfi->title, mfi->artist, mfi->album, mfi->genre,
 			  mfi->comment, mfi->type, mfi->composer, mfi->orchestra, mfi->conductor, mfi->grouping, 
@@ -2129,7 +2322,7 @@ db_file_update(struct media_file_info *mfi)
 			  mfi->year, mfi->track, mfi->total_tracks, mfi->disc, mfi->total_discs, mfi->bpm,
 			  mfi->compilation, mfi->rating, mfi->data_kind, mfi->item_kind,
 			  mfi->description, (int64_t)mfi->time_modified,
-			  (int64_t)mfi->db_timestamp, mfi->sample_count,
+			  (int64_t)mfi->db_timestamp, mfi->subtrack, mfi->sample_offset, mfi->sample_count,
 			  mfi->codectype, mfi->index, mfi->has_video,
 			  mfi->bits_per_sample, mfi->album_artist,
 			  mfi->media_kind, mfi->tv_series_name, mfi->tv_episode_num_str, 
@@ -4218,6 +4411,8 @@ db_perthread_deinit(void)
   "   time_played        INTEGER DEFAULT 0,"		\
   "   db_timestamp       INTEGER DEFAULT 0,"		\
   "   disabled           INTEGER DEFAULT 0,"		\
+  "   subtrack           INTEGER DEFAULT 0,"            \
+  "   sample_offset      INTEGER DEFAULT 0,"		\
   "   sample_count       INTEGER DEFAULT 0,"		\
   "   codectype          VARCHAR(5) DEFAULT NULL,"	\
   "   idx                INTEGER NOT NULL,"		\
@@ -4368,9 +4563,9 @@ db_perthread_deinit(void)
   " VALUES(8, 'Purchased', 0, 'media_kind = 1024', 0, '', 0, 8);"
  */
 
-#define SCHEMA_VERSION 13
+#define SCHEMA_VERSION 14
 #define Q_SCVER					\
-  "INSERT INTO admin (key, value) VALUES ('schema_version', '13');"
+  "INSERT INTO admin (key, value) VALUES ('schema_version', '14');"
 
 struct db_init_query {
   char *query;
@@ -5033,6 +5228,27 @@ static const struct db_init_query db_upgrade_v13_queries[] =
     { U_V13_SCVER,    "set schema_version to 13" },
   };
 
+/* Upgrade from schema v13 to v14 */
+
+#define U_V14_ADD_SUBTRACK_COLUMN					\
+  "ALTER TABLE files ADD COLUMN"					\
+  "   subtrack           INTEGER DEFAULT 0;"
+
+#define U_V14_ADD_OFFSET_COLUMN						\
+  "ALTER TABLE files ADD COLUMN"					\
+  "   sample_offset      INTEGER DEFAULT 0;"
+
+#define U_V14_SCVER				\
+  "UPDATE admin SET value = '14' WHERE key = 'schema_version';"
+
+static const struct db_init_query db_upgrade_v14_queries[] =
+  {
+    { U_V14_ADD_SUBTRACK_COLUMN, "add subtrack column to files table" },
+    { U_V14_ADD_OFFSET_COLUMN, "add sample_offset column to files table" },
+
+    { U_V14_SCVER,    "set schema_version to 14" },
+  };
+
 static int
 db_check_version(void)
 {
@@ -5101,6 +5317,13 @@ db_check_version(void)
 
 	  case 12:
 	    ret = db_generic_upgrade(db_upgrade_v13_queries, sizeof(db_upgrade_v13_queries) / sizeof(db_upgrade_v13_queries[0]));
+	    if (ret < 0)
+	      return -1;
+
+	    /* FALLTHROUGH */
+
+	  case 13:
+	    ret = db_generic_upgrade(db_upgrade_v14_queries, sizeof(db_upgrade_v14_queries) / sizeof(db_upgrade_v14_queries[0]));
 	    if (ret < 0)
 	      return -1;
 

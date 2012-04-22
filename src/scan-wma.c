@@ -468,6 +468,7 @@ int wma_parse_stream_properties(int fd, int size, MP3FILE *pmp3) {
  */
 int wma_parse_audio_media(int fd, int size, MP3FILE *pmp3) {
     unsigned short int codec;
+    int fixSampleOffsets = (pmp3->samplerate == 0), fixFinalSampleCount = (pmp3->sample_count == 0);
 
     if(size < 18)
         return TRUE; /* we'll leave it wma.  will work or not! */
@@ -499,6 +500,27 @@ int wma_parse_audio_media(int fd, int size, MP3FILE *pmp3) {
     lseek(fd,2,SEEK_CUR);
     if(!wma_file_read_int(fd,(unsigned int *)&pmp3->samplerate))
         return FALSE;
+
+    /* Fix any sample offsets given the new sample rate. */
+    if (fixSampleOffsets && pmp3->cuesheet_tracks != NULL) {
+	int i;
+
+	for (i = 0; i < pmp3->total_tracks; i++) {
+	    pmp3->cuesheet_tracks[i].sample_offset *= pmp3->samplerate;
+	    pmp3->cuesheet_tracks[i].sample_offset /= 75;
+	    if (i + 1 == pmp3->total_tracks) {
+		pmp3->cuesheet_tracks[i].sample_count = pmp3->sample_count - pmp3->cuesheet_tracks[i].sample_offset;
+	    } else {
+		pmp3->cuesheet_tracks[i].sample_count *= pmp3->samplerate;
+		pmp3->cuesheet_tracks[i].sample_count /= 75;
+	    }
+	    pmp3->cuesheet_tracks[i].song_length = pmp3->cuesheet_tracks[i].sample_count * 1000 / pmp3->samplerate;
+	}
+    }
+    if (fixFinalSampleCount && pmp3->song_length && pmp3->cuesheet_tracks != NULL) {
+	pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_count = pmp3->song_length * pmp3->samplerate / 1000 - pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_offset;
+	pmp3->cuesheet_tracks[pmp3->total_tracks - 1].song_length = pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_count * 1000 / pmp3->samplerate;
+    }
 
     return TRUE;
 }
@@ -795,6 +817,8 @@ int wma_parse_file_properties(int fd,int size, MP3FILE *pmp3) {
 
     unsigned int max_bitrate;
 
+    int fixFinalSampleCount = (pmp3->sample_count == 0);
+
     /* skip guid (16 bytes), filesize (8), creation time (8),
      * data packets (8)
      */
@@ -828,6 +852,11 @@ int wma_parse_file_properties(int fd,int size, MP3FILE *pmp3) {
         return FALSE;
 
     pmp3->bitrate = max_bitrate/1000;
+
+    if (fixFinalSampleCount && pmp3->samplerate && pmp3->cuesheet_tracks != NULL) {
+	pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_count = pmp3->song_length * pmp3->samplerate / 1000 - pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_offset;
+	pmp3->cuesheet_tracks[pmp3->total_tracks - 1].song_length = pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_count * 1000 / pmp3->samplerate;
+    }
 
     return TRUE;
 }

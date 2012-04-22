@@ -50,7 +50,7 @@ int scan_get_mpcinfo(char *filename, MP3FILE *pmp3) {
     TagLib_Tag *tag;
     const TagLib_AudioProperties *properties;
     char *val;
-    int len;
+    int len, fixSampleOffsets = (pmp3->samplerate == 0), fixFinalSampleCount = (pmp3->sample_count == 0);
     unsigned int i;
 
     /* open file with taglib */
@@ -114,6 +114,24 @@ int scan_get_mpcinfo(char *filename, MP3FILE *pmp3) {
     pmp3->song_length = taglib_audioproperties_length(properties) * 1000;
     pmp3->bitrate = taglib_audioproperties_bitrate(properties);
     pmp3->samplerate = taglib_audioproperties_samplerate(properties);
+
+    /* Fix any sample offsets given the new sample rate. */
+    if (fixSampleOffsets && pmp3->cuesheet_tracks != NULL) {
+	for (i = 0; i < pmp3->total_tracks; i++) {
+	    pmp3->cuesheet_tracks[i].sample_offset *= pmp3->samplerate;
+	    pmp3->cuesheet_tracks[i].sample_offset /= 75;
+	    if (i + 1 == pmp3->total_tracks) {
+		pmp3->cuesheet_tracks[i].sample_count = pmp3->sample_count - pmp3->cuesheet_tracks[i].sample_offset;
+	    } else {
+		pmp3->cuesheet_tracks[i].sample_count *= pmp3->samplerate;
+		pmp3->cuesheet_tracks[i].sample_count /= 75;
+	    }
+	    pmp3->cuesheet_tracks[i].song_length = pmp3->cuesheet_tracks[i].sample_count * 1000 / pmp3->samplerate;
+	}
+    } else if (fixFinalSampleCount && pmp3->cuesheet_tracks != NULL) {
+	pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_count = pmp3->song_length * pmp3->samplerate / 1000 - pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_offset;
+	pmp3->cuesheet_tracks[pmp3->total_tracks - 1].song_length = pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_count * 1000 / pmp3->samplerate;
+    }
 
     taglib_file_free(file);
 

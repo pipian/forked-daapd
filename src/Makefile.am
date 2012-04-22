@@ -13,6 +13,10 @@ if COND_ITUNES
 ITUNESSRC=filescanner_itunes.c
 endif
 
+if COND_CUESHEET
+CUESHEETSRC=scan-cue.c
+endif
+
 if COND_ALSA
 ALSASRC=laudio_alsa.c
 endif
@@ -95,7 +99,7 @@ forked_daapd_SOURCES = main.c \
 	raop.c raop.h \
 	evbuffer/evbuffer.c evbuffer/evbuffer.h \
 	scan-wma.c \
-	$(FLACSRC) $(MUSEPACKSRC)
+	$(FLACSRC) $(MUSEPACKSRC) $(CUESHEETSRC)
 
 nodist_forked_daapd_SOURCES = \
 	$(ANTLR_SOURCES)
@@ -106,7 +110,8 @@ BUILT_SOURCES = \
 EXTRA_DIST = \
 	$(ANTLR_GRAMMARS) \
 	scan-mpc.c \
-	scan-flac.c
+	scan-flac.c \
+	scan-cue.c
 
 CLEANFILES = \
 	$(GPERF_PRODUCTS)

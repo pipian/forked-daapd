@@ -71,7 +71,9 @@ struct transcode_ctx {
   off_t offset;
 
   uint32_t duration;
+  uint64_t start;
   uint64_t samples;
+  int need_seek;
 
   /* WAV header */
   int wavhdr;
@@ -142,6 +144,8 @@ transcode(struct transcode_ctx *ctx, struct evbuffer *evbuf, int wanted)
   int used;
   int stop;
   int ret;
+  int64_t seek = 0, diff;
+  int bps;
 #if BYTE_ORDER == BIG_ENDIAN
   int i;
 #endif
@@ -153,6 +157,31 @@ transcode(struct transcode_ctx *ctx, struct evbuffer *evbuf, int wanted)
       evbuffer_add(evbuf, ctx->header, sizeof(ctx->header));
       processed += sizeof(ctx->header);
       ctx->offset += sizeof(ctx->header);
+    }
+
+  switch (ctx->acodec->sample_fmt)
+    {
+    case SAMPLE_FMT_U8:
+      bps = 1;
+      break;
+    case SAMPLE_FMT_S16:
+      bps = 2;
+      break;
+    case SAMPLE_FMT_S32:
+    case SAMPLE_FMT_FLT:
+      bps = 4;
+      break;
+    case SAMPLE_FMT_DBL:
+      bps = 8;
+      break;
+    default:
+      bps = 0;
+      break;
+    }
+
+  if (ctx->need_seek)
+    {
+      DPRINTF(E_DBG, L_XCODE, "Preparing to seek to %d ms\n", (int)ctx->start);
     }
 
   stop = 0;
@@ -183,6 +212,27 @@ transcode(struct transcode_ctx *ctx, struct evbuffer *evbuf, int wanted)
 
 	  ctx->apacket2.data += used;
 	  ctx->apacket2.size -= used;
+
+	  if (ctx->need_seek)
+	    {
+	      /* Need to seek into the file (during transcode startup). */
+	      diff = seek + buflen - ctx->start * ctx->acodec->sample_rate / 1000 * ctx->acodec->channels * bps;
+	      if (diff > 0)
+		{
+		  /* Ignore irrelevant samples. */
+		  DPRINTF(E_DBG, L_XCODE, "Successfully seeked to %d ms\n", (int)ctx->start);
+		  memmove(ctx->abuffer, ((char *)ctx->abuffer) + (buflen - diff), diff);
+		  memset(((char *)ctx->abuffer) + diff, 0, buflen - diff);
+		  buflen = diff;
+		  ctx->need_seek = 0;
+		}
+	      else
+		{
+		  /* Skip the samples that were decoded this time around. */
+		  seek += buflen;
+		  continue;
+		}
+	    }
 
 	  /* No frame decoded this time around */
 	  if (buflen == 0)
@@ -261,7 +311,7 @@ transcode_seek(struct transcode_ctx *ctx, int ms)
 
   start_time = ctx->fmtctx->streams[ctx->astream]->start_time;
 
-  target_pts = ms;
+  target_pts = (ctx->start + ms);
   target_pts = target_pts * AV_TIME_BASE / 1000;
   target_pts = av_rescale_q(target_pts, AV_TIME_BASE_Q, ctx->fmtctx->streams[ctx->astream]->time_base);
 
@@ -353,6 +403,7 @@ transcode_setup(struct media_file_info *mfi, off_t *est_size, int wavhdr)
     }
   memset(ctx, 0, sizeof(struct transcode_ctx));
 
+ reopen:
 #if LIBAVFORMAT_VERSION_MAJOR >= 53 || (LIBAVFORMAT_VERSION_MAJOR == 53 && LIBAVCODEC_VERSION_MINOR >= 3)
   ret = avformat_open_input(&ctx->fmtctx, mfi->path, NULL, NULL);
 #else
@@ -465,6 +516,18 @@ transcode_setup(struct media_file_info *mfi, off_t *est_size, int wavhdr)
   ctx->duration = mfi->song_length;
   ctx->samples = mfi->sample_count;
   ctx->wavhdr = wavhdr;
+
+  /* Seek to the start. */
+  ctx->start = mfi->sample_offset * 1000 / mfi->samplerate;
+  if (!ctx->need_seek && transcode_seek(ctx, 0) < 0)
+     {
+      /* Have to rewind completely. */
+      DPRINTF(E_DBG, L_XCODE, "Failed to seek.  Reopening file.\n");
+       ctx->need_seek = 1;
+      avcodec_close(ctx->acodec);
+      av_close_input_file(ctx->fmtctx);
+      goto reopen;
+    }
 
   if (wavhdr)
     make_wav_header(ctx, est_size);
