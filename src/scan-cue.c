@@ -651,6 +651,10 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
 		    char *name, *trackStr, *val;
 		    int track = 0;
 		    
+		    /*
+		     * CUE_TRACK##_FIELD format from foobar2000:
+		     * http://www.hydrogenaudio.org/forums/index.php?showtopic=47532)
+		     */
 		    if (strncasecmp("cue_track", entry, 9) == 0) {
 			trackStr = entry + 9;
 			/* Check that the next characters are digits. */
@@ -746,6 +750,7 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
 			    }
 			}
 		    } else if (strncasecmp("cuesheet", entry, 8) == 0) {
+			/* Read from a CUESHEET tag. */
 			if (*(entry + 8) == '=') {
 			    cuesheet = strdup(entry + 9);
 			}
@@ -822,7 +827,7 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
 skip_flac:
 #endif
     
-    /* Next, try filename.cue. */
+    /* Next, try reading from filename.cue. */
     if (cuesheet == NULL) {
 	len = strlen(filename);
 	cue_filename = calloc(len + 5, 1);
@@ -847,7 +852,7 @@ skip_flac:
 	strncpy(cue_filename, filename, len + 1);
 	strncat(cue_filename, ".cue", 4);
 	
-	/* Finally, try filename.ext.cue. */
+	/* Finally, try reading from filename.[extension].cue. */
 	if (lstat(cue_filename, &sb) == 0) {
 	    /* Read file. */
 	    cuesheet = calloc(sb.st_size + 1, 1);
