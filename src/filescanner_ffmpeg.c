@@ -46,6 +46,9 @@ extern int scan_get_flacinfo(char *filename, struct media_file_info *pmp3);
 #ifdef MUSEPACK
 extern int scan_get_mpcinfo(char *filename, struct media_file_info *pmp3);
 #endif
+#ifdef CUESHEET
+extern int scan_get_cuesheet(char *filename, struct media_file_info *pmp3);
+#endif
 
 
 /* Mapping between the metadata name(s) and the offset
@@ -96,7 +99,7 @@ parse_disc(struct media_file_info *mfi, char *disc_string)
 }
 
 /* Lookup is case-insensitive, first occurrence takes precedence */
-static const struct metadata_map md_map_generic[] =
+const struct metadata_map md_map_generic[] =
   {
     { "title",        0, mfi_offsetof(title),              NULL },
     { "artist",       0, mfi_offsetof(artist),             NULL },
@@ -142,7 +145,7 @@ static const struct metadata_map md_map_tv[] =
  *  for example--are of course handled. The rest of these tags are reported to
  *  have been used by various programs in the wild.
  */
-static const struct metadata_map md_map_vorbis[] =
+const struct metadata_map md_map_vorbis[] =
   {
     { "albumartist",  0, mfi_offsetof(album_artist),      NULL },
     { "album artist", 0, mfi_offsetof(album_artist),      NULL },
@@ -604,6 +607,16 @@ scan_metadata_ffmpeg(char *file, struct media_file_info *mfi)
     {
       mfi->media_kind = 2;
     }
+
+#ifdef CUESHEET
+  /* Try to scan for a valid cuesheet. */
+  ret = scan_get_cuesheet(file, mfi);
+
+  if (ret > 0)
+    {
+      DPRINTF(E_DBG, L_SCAN, "Picked up %d tracks from cuesheet\n", ret);
+    }
+#endif
 
  skip_extract:
   if (mdcount == 0)

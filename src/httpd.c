@@ -372,6 +372,12 @@ httpd_stream_file(struct http_connection *c, struct http_request *req, struct ht
 
   transcode = transcode_needed(req, mfi->codectype);
 
+  /* If it's a subtrack, force a transcode (for now)... */
+  if (mfi->subtrack)
+    {
+      transcode = 1;
+    }
+
   if (transcode)
     {
       DPRINTF(E_INFO, L_HTTPD, "Preparing to transcode %s\n", mfi->path);

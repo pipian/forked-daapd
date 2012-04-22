@@ -67,7 +67,7 @@ int scan_get_flacinfo(char *filename, MP3FILE *pmp3) {
     FLAC__Metadata_Chain *chain;
     FLAC__Metadata_Iterator *iterator;
     FLAC__StreamMetadata *block;
-    int found=0;
+    int found=0, fixSampleOffsets = (pmp3->samplerate == 0), fixFinalSampleCount = (pmp3->sample_count == 0);
     unsigned int sec, ms;
     int i;
     char *val;
@@ -109,6 +109,26 @@ int scan_get_flacinfo(char *filename, MP3FILE *pmp3) {
             pmp3->samplerate = block->data.stream_info.sample_rate;
             pmp3->bits_per_sample = block->data.stream_info.bits_per_sample;
             pmp3->sample_count = block->data.stream_info.total_samples;
+
+	    /* Fix any sample offsets given the new sample rate. */
+	    if (fixSampleOffsets && pmp3->cuesheet_tracks != NULL) {
+		int i;
+
+		for (i = 0; i < pmp3->total_tracks; i++) {
+		    pmp3->cuesheet_tracks[i].sample_offset *= pmp3->samplerate;
+		    pmp3->cuesheet_tracks[i].sample_offset /= 75;
+		    if (i + 1 == pmp3->total_tracks) {
+			pmp3->cuesheet_tracks[i].sample_count = pmp3->sample_count - pmp3->cuesheet_tracks[i].sample_offset;
+		    } else {
+			pmp3->cuesheet_tracks[i].sample_count *= pmp3->samplerate;
+			pmp3->cuesheet_tracks[i].sample_count /= 75;
+		    }
+		    pmp3->cuesheet_tracks[i].song_length = pmp3->cuesheet_tracks[i].sample_count * 1000 / pmp3->samplerate;
+		}
+	    } else if (fixFinalSampleCount && pmp3->cuesheet_tracks != NULL) {
+		pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_count = pmp3->sample_count - pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_offset;
+		pmp3->cuesheet_tracks[pmp3->total_tracks - 1].song_length = pmp3->cuesheet_tracks[pmp3->total_tracks - 1].sample_count * 1000 / pmp3->samplerate;
+ 	    }
 
             found |= 1;
             if(found == 3)
