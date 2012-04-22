@@ -284,14 +284,13 @@ process_media_file(char *file, time_t mtime, off_t size, int compilation)
   char *filename;
   char *ext;
   time_t stamp;
-  int id;
   int ret;
 
-  db_file_stamp_bypath(file, &stamp, &id);
+  db_file_stamp_bypath(file, &stamp);
 
   if (stamp >= mtime)
     {
-      db_file_ping(id);
+      db_file_ping(file);
       return;
     }
 
