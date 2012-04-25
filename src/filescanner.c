@@ -285,6 +285,7 @@ process_media_file(char *file, time_t mtime, off_t size, int compilation)
   char *ext;
   time_t stamp;
   int ret;
+  int i;
 
   db_file_stamp_bypath(file, &stamp);
 
@@ -362,6 +363,16 @@ process_media_file(char *file, time_t mtime, off_t size, int compilation)
       DPRINTF(E_INFO, L_SCAN, "Could not extract metadata for %s\n", file);
 
       goto out;
+    }
+
+  /* Make sure to fix IDs of any subtracks. */
+  if (mfi.id != 0 && mfi.cuesheet_tracks != NULL)
+    {
+      /* Fix IDs of subtracks. */
+      for (i = 0; i < mfi.total_tracks; i++)
+	{
+	  mfi.cuesheet_tracks[i].id = db_file_id_bypath_subtrack(file, i);
+	}
     }
 
   mfi.compilation = compilation;

@@ -343,6 +343,9 @@ int
 db_file_id_bypath(char *path);
 
 int
+db_file_id_bypath_subtrack(char *path, int subtrack);
+
+int
 db_file_id_byfilebase(char *filename, char *base);
 
 int
