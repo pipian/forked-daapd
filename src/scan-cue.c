@@ -698,8 +698,24 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
 				{
 				    strval = (char **) ((char *)&(cuesheet_tracks[track - 1]) + md_map_generic[j].offset);
 				    
+				    /*
+				     * Concatenate multiple values of
+				     * (COMPOSER[SORT])
+				     */
+
 				    if (*strval == NULL)
 					*strval = strdup(val);
+				    else if (md_map_generic[j].offset ==
+					     mfi_offsetof(composer) ||
+					     md_map_generic[j].offset ==
+					     mfi_offsetof(composer_sort))
+				      {
+					*strval = realloc(*strval,
+							  strlen(*strval) +
+							  strlen(val) + 2);
+					strcat(*strval, "/");
+					strcat(*strval, val);
+				      }
 				}
 				else
 				{
@@ -736,6 +752,17 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
 				    
 				    if (*strval == NULL)
 					*strval = strdup(val);
+				    else if (md_map_vorbis[j].offset ==
+					     mfi_offsetof(composer) ||
+					     md_map_vorbis[j].offset ==
+					     mfi_offsetof(composer_sort))
+				      {
+					*strval = realloc(*strval,
+							  strlen(*strval) +
+							  strlen(val) + 2);
+					strcat(*strval, "/");
+					strcat(*strval, val);
+				      }
 				}
 				else
 				{
