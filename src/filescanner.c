@@ -377,6 +377,22 @@ process_media_file(char *file, time_t mtime, off_t size, int compilation)
 
   mfi.compilation = compilation;
 
+  /*
+   * Override compilation flag on SOME albums (by default, where
+   * there's an album artist.
+   */
+  if (mfi.cuesheet_tracks != NULL)
+    {
+      for (i = 0; i < mfi.total_tracks; i++)
+	{
+	  if (mfi.cuesheet_tracks[i].artist != NULL)
+	    {
+	      mfi.compilation = 1;
+	      break;
+	    }
+	}
+    }
+
   if (!mfi.item_kind)
     mfi.item_kind = 2; /* music */
   if (!mfi.media_kind)
