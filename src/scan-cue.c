@@ -165,9 +165,10 @@ void msf_to_sample_offset(char *msf, MP3FILE *pmp3, MP3FILE *cuesheet_track) {
  * @param tracks hint of number of tracks in the cuesheet
  * @param cuesheet_tracks array of MP3FILEs corresponding to the cuesheet tracks
  * @param pmp3 MP3FILE struct to be filled with metainfo
+ * @param ignore_meta If 1, metadata in the cuesheet will be ignored
  * @return The number of tracks read from the cuesheet
  */
-int parse_cuesheet(char *cuesheet, int tracks, MP3FILE *cuesheet_tracks, MP3FILE *pmp3) {
+int parse_cuesheet(char *cuesheet, int tracks, MP3FILE *cuesheet_tracks, MP3FILE *pmp3, int ignore_meta) {
     int track, index, i;
     char *line = cuesheet, *end, *directive;
     char *val;
@@ -249,7 +250,7 @@ int parse_cuesheet(char *cuesheet, int tracks, MP3FILE *cuesheet_tracks, MP3FILE
 	    /* Ah, a performer! */
 	    val = unquote(read_token(&line));
 	    
-	    if (val != NULL) {
+	    if (val != NULL && !ignore_meta) {
 		if (track) {
 		    /* Add it to the appropriate track. */
 		    strval = (char **)&(cuesheet_tracks[track - 1].artist);
@@ -281,7 +282,7 @@ int parse_cuesheet(char *cuesheet, int tracks, MP3FILE *cuesheet_tracks, MP3FILE
 	    /* Ah, a REM! */
 	    val = read_token(&line);
 	    
-	    if (val != NULL) {
+	    if (val != NULL && !ignore_meta) {
 		char *c;
 		
 		/*
@@ -522,7 +523,7 @@ int parse_cuesheet(char *cuesheet, int tracks, MP3FILE *cuesheet_tracks, MP3FILE
 	    /* Ah, a songwriter! */
 	    val = unquote(read_token(&line));
 	    
-	    if (val != NULL) {
+	    if (val != NULL && !ignore_meta) {
 		if (track) {
 		    /* Add it to the appropriate track. */
 		    strval = (char **)&(cuesheet_tracks[track - 1].composer);
@@ -541,7 +542,7 @@ int parse_cuesheet(char *cuesheet, int tracks, MP3FILE *cuesheet_tracks, MP3FILE
 	    /* Ah, a title! */
 	    val = unquote(read_token(&line));
 	    
-	    if (val != NULL) {
+	    if (val != NULL && !ignore_meta) {
 		if (track) {
 		    /* Add it to the appropriate track. */
 		    strval = (char **)&(cuesheet_tracks[track - 1].title);
@@ -612,6 +613,7 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
     char **strval;
     uint32_t *intval;
     int tracks = 0, len;
+    int ignore_meta = 0;
     
 #ifdef FLAC
     /* Try scanning embedded cuesheet if the file is a FLAC file. */
@@ -698,8 +700,24 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
 				{
 				    strval = (char **) ((char *)&(cuesheet_tracks[track - 1]) + md_map_generic[j].offset);
 				    
+				    /*
+				     * Concatenate multiple values of
+				     * (COMPOSER[SORT])
+				     */
+
 				    if (*strval == NULL)
 					*strval = strdup(val);
+				    else if (md_map_generic[j].offset ==
+					     mfi_offsetof(composer) ||
+					     md_map_generic[j].offset ==
+					     mfi_offsetof(composer_sort))
+				      {
+					*strval = realloc(*strval,
+							  strlen(*strval) +
+							  strlen(val) + 2);
+					strcat(*strval, "/");
+					strcat(*strval, val);
+				      }
 				}
 				else
 				{
@@ -736,6 +754,17 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
 				    
 				    if (*strval == NULL)
 					*strval = strdup(val);
+				    else if (md_map_vorbis[j].offset ==
+					     mfi_offsetof(composer) ||
+					     md_map_vorbis[j].offset ==
+					     mfi_offsetof(composer_sort))
+				      {
+					*strval = realloc(*strval,
+							  strlen(*strval) +
+							  strlen(val) + 2);
+					strcat(*strval, "/");
+					strcat(*strval, val);
+				      }
 				}
 				else
 				{
@@ -753,6 +782,7 @@ int scan_get_cuesheet(char *filename, MP3FILE *pmp3) {
 			/* Read from a CUESHEET tag. */
 			if (*(entry + 8) == '=') {
 			    cuesheet = strdup(entry + 9);
+			    ignore_meta = 1;
 			}
 		    }
 		    
@@ -870,7 +900,8 @@ skip_flac:
 	return tracks;
     }
     
-    tracks = parse_cuesheet(cuesheet, tracks, cuesheet_tracks, pmp3);
+    tracks = parse_cuesheet(cuesheet, tracks, cuesheet_tracks, pmp3,
+			    ignore_meta);
     free(cuesheet);
     
     return tracks;
