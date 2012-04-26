@@ -2091,7 +2091,7 @@ db_file_add(struct media_file_info *mfi)
     {
       struct media_file_info pseudo_mfi;
       int i, j, tracks = 0, retval = 0;
-      char **oldStrval, **newStrval;
+      char **oldStrval, **newStrval, **unsortStrval;
       char *oldCval, *newCval;
       uint32_t *oldIval, *newIval;
       uint64_t *oldI64val, *newI64val;
@@ -2160,6 +2160,40 @@ db_file_add(struct media_file_info *mfi)
 		    {
 		      *newStrval = *oldStrval;
 		    }
+		  else
+		    {
+		      /* Special handling for *SORT values... */
+		      switch (mfi_cols_map[j].offset)
+			{
+			case mfi_offsetof(title_sort):
+			  /* TITLESORT is always overridden. */
+			  *newStrval = *oldStrval;
+			  break;
+			case mfi_offsetof(artist_sort):
+			case mfi_offsetof(composer_sort):
+			  /*
+			   * ARTISTSORT and COMPOSERSORT are overridden
+			   * if there's a value for ARTIST/COMPOSER in
+			   * the track.
+			   */
+			  if (mfi_cols_map[j].offset == mfi_offsetof(artist_sort))
+			    {
+			      unsortStrval = (char **) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_offsetof(artist));
+			    }
+			  else
+			    {
+			      unsortStrval = (char **) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_offsetof(composer));
+			    }
+			  if (*unsortStrval != NULL)
+			    {
+			      *newStrval = *oldStrval;
+			    }
+			  break;
+			default:
+			  break;
+			}
+		    }
+
 		  break;
 
 		default:
@@ -2255,7 +2289,7 @@ db_file_update(struct media_file_info *mfi)
     {
       struct media_file_info pseudo_mfi;
       int i, j, tracks = 0, retval = 0;
-      char **oldStrval, **newStrval;
+      char **oldStrval, **newStrval, **unsortStrval;
       char *oldCval, *newCval;
       uint32_t *oldIval, *newIval;
       uint64_t *oldI64val, *newI64val;
@@ -2321,6 +2355,39 @@ db_file_update(struct media_file_info *mfi)
 		  if (*oldStrval != NULL)
 		    {
 		      *newStrval = *oldStrval;
+		    }
+		  else
+		    {
+		      /* Special handling for *SORT values... */
+		      switch (mfi_cols_map[j].offset)
+			{
+			case mfi_offsetof(title_sort):
+			  /* TITLESORT is always overridden. */
+			  *newStrval = *oldStrval;
+			  break;
+			case mfi_offsetof(artist_sort):
+			case mfi_offsetof(composer_sort):
+			  /*
+			   * ARTISTSORT and COMPOSERSORT are overridden
+			   * if there's a value for ARTIST/COMPOSER in
+			   * the track.
+			   */
+			  if (mfi_cols_map[j].offset == mfi_offsetof(artist_sort))
+			    {
+			      unsortStrval = (char **) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_offsetof(artist));
+			    }
+			  else
+			    {
+			      unsortStrval = (char **) ((char *)&(mfi->cuesheet_tracks[i]) + mfi_offsetof(composer));
+			    }
+			  if (*unsortStrval != NULL)
+			    {
+			      *newStrval = *oldStrval;
+			    }
+			  break;
+			default:
+			  break;
+			}
 		    }
 		  break;
 
